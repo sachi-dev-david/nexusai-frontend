@@ -659,7 +659,7 @@ export default function App() {
           <div className="topbar-spacer"/>
           <div className="topbar-status">
             <div className={`status-dot ${devices.length === 0 ? 'offline' : ''}`}/>
-            <span>OLLAMA · MISTRAL 7B · 本地部署</span>
+            <span>OLLAMA · Llama 3.2 · 本地部署</span>
           </div>
           <div className="topbar-user">
             <div className="user-info">
