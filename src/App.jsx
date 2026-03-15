@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { login, logout } from './api/auth.js'
 import {
   getConversations,
@@ -179,11 +179,12 @@ const styles = `
   .device-id{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:var(--dim)}
   .device-temp{font-family:'JetBrains Mono',monospace;font-size:.62rem;color:var(--muted)}
   .device-temp.hot{color:var(--warn)}
-  .skill-item{display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;border:1px solid transparent;transition:all .15s;margin-bottom:3px}
-  .skill-item:hover{background:var(--bg3);border-color:var(--border)}
-  .skill-icon{width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:.75rem;background:var(--bg3);border:1px solid var(--border);flex-shrink:0}
-  .skill-label{font-size:.72rem;flex:1}
-  .skill-arrow{font-size:.6rem;color:var(--dim)}
+  .skill-item{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;cursor:pointer;border:1px solid var(--border2);background:var(--bg3);transition:all .15s;margin:0 4px 8px 0;border-radius:4px;white-space:nowrap}
+  .skill-item:hover{background:var(--bg2);border-color:var(--nv);color:var(--nv)}
+  .skill-icon{width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0}
+  .skill-label{font-size:.75rem;font-weight:500}
+  .skill-arrow{display:none}
+  .skills-toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--border);max-height:120px;overflow-y:auto}
   .panel-placeholder{font-family:'JetBrains Mono',monospace;font-size:.62rem;color:var(--dim);padding:8px 4px}
 
   /* RWD Tablet */
@@ -212,10 +213,32 @@ const styles = `
     .input-area{padding:8px 12px 12px;flex-shrink:0}
     .msg{max-width:100%}
     .input-hint{display:none}
+    .skills-toolbar{padding:8px 12px;max-height:100px}
+    .skill-item{padding:4px 8px;font-size:.65rem}
   }
 
   .md strong{font-weight:600}
   .md em{font-style:italic;color:var(--muted)}
+
+  /* PARAMETER MODAL */
+  .param-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100}
+  .param-modal{background:var(--bg2);border:1px solid var(--border2);padding:24px;border-radius:4px;max-width:500px;width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  .param-modal-title{font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:20px;color:var(--text)}
+  .param-field{margin-bottom:16px}
+  .param-label{display:block;font-family:'JetBrains Mono',monospace;font-size:.65rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+  .param-input,.param-select{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:10px 12px;font-family:'Barlow',sans-serif;font-size:.85rem;outline:none;transition:border-color .2s}
+  .param-input:focus,.param-select:focus{border-color:var(--nv)}
+  .param-input::placeholder{color:var(--dim)}
+  .param-actions{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
+  .param-btn{padding:10px 20px;font-family:'Barlow Condensed',sans-serif;font-size:.85rem;font-weight:600;letter-spacing:.05em;border:1px solid var(--border2);cursor:pointer;transition:all .15s;text-transform:uppercase}
+  .param-btn-cancel{background:transparent;color:var(--muted)}
+  .param-btn-cancel:hover{border-color:var(--muted);color:var(--text)}
+  .param-btn-submit{background:var(--nv);color:#000;border-color:var(--nv);font-weight:700}
+  .param-btn-submit:hover{opacity:.85}
+
+  @media(max-width:640px){
+    .param-modal{max-width:calc(100% - 16px);padding:16px}
+  }
 `
 
 // ── MARKDOWN ──────────────────────────────────────────────────────────────
@@ -252,6 +275,109 @@ function SkillCallBadge({ call }) {
       <span className={`skill-call-status ${call.done ? '' : 'pending'}`}>
         {call.done ? '✓ 完成' : '⟳ 執行中'}
       </span>
+    </div>
+  )
+}
+
+// ── PARAMETER MODAL ──────────────────────────────────────────────────────
+function ParameterModal({ type, open, onClose, onSubmit, initialData }) {
+  const [data, setData] = React.useState(initialData || {
+    material: '', surface: '', heatTreat: '', roughness: '', position: '', size: '', company: ''
+  })
+
+  React.useEffect(() => {
+    if (open && initialData) {
+      setData(prev => ({ ...prev, ...initialData }))
+    }
+  }, [open, initialData])
+
+  const handleChange = (field, value) => {
+    setData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleSubmit = () => {
+    onSubmit(data)
+  }
+
+  if (!open) return null
+
+  const materialOptions = ['316不鏽鋼', 'A6063鋁合金', '牌號45鋼', '黃銅']
+  const surfaceOptions = ['磨砂', '亮面', '氧化', '鍍鎳']
+  const heatTreatOptions = ['無', '正火', '調質', '滲碳淬火']
+  const roughnessOptions = ['Ra0.8', 'Ra1.6', 'Ra3.2', 'Ra6.3']
+  const positionOptions = ['±0.1', '±0.05', '±0.02']
+  const sizeOptions = ['±0.2mm', '±0.1mm', '±0.05mm']
+
+  return (
+    <div className="param-modal-overlay" onClick={onClose}>
+      <div className="param-modal" onClick={e => e.stopPropagation()}>
+        <div className="param-modal-title">
+          {type === 'query_quote' ? '查詢報價' : '新增報價'}
+        </div>
+
+        {type === 'new_quote' && (
+          <>
+            <div className="param-field">
+              <label className="param-label">加工材料 *</label>
+              <select className="param-select" value={data.material} onChange={e => handleChange('material', e.target.value)}>
+                <option value="">請選擇材料</option>
+                {materialOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+
+            <div className="param-field">
+              <label className="param-label">表面處理 *</label>
+              <select className="param-select" value={data.surface} onChange={e => handleChange('surface', e.target.value)}>
+                <option value="">請選擇表面處理</option>
+                {surfaceOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+
+            <div className="param-field">
+              <label className="param-label">熱處理 *</label>
+              <select className="param-select" value={data.heatTreat} onChange={e => handleChange('heatTreat', e.target.value)}>
+                <option value="">請選擇熱處理</option>
+                {heatTreatOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+
+            <div className="param-field">
+              <label className="param-label">表面粗糙度 *</label>
+              <select className="param-select" value={data.roughness} onChange={e => handleChange('roughness', e.target.value)}>
+                <option value="">請選擇粗糙度</option>
+                {roughnessOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+
+            <div className="param-field">
+              <label className="param-label">型位公差 *</label>
+              <select className="param-select" value={data.position} onChange={e => handleChange('position', e.target.value)}>
+                <option value="">請選擇型位公差</option>
+                {positionOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+
+            <div className="param-field">
+              <label className="param-label">尺寸公差 *</label>
+              <select className="param-select" value={data.size} onChange={e => handleChange('size', e.target.value)}>
+                <option value="">請選擇尺寸公差</option>
+                {sizeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+          </>
+        )}
+
+        <div className="param-field">
+          <label className="param-label">公司名稱 {type === 'new_quote' ? '*' : ''}</label>
+          <input type="text" className="param-input" placeholder="請輸入公司名稱"
+            value={data.company} onChange={e => handleChange('company', e.target.value)}/>
+        </div>
+
+        <div className="param-actions">
+          <button className="param-btn param-btn-cancel" onClick={onClose}>取消</button>
+          <button className="param-btn param-btn-submit" onClick={handleSubmit}>確認</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -310,6 +436,19 @@ export default function App() {
   const [devices, setDevices]           = useState([])
   const [skills, setSkills]             = useState([])
   const [sidebarOpen, setSidebarOpen]   = useState(false)
+
+  // ── Parameter modal state ──
+  const [paramModalOpen, setParamModalOpen] = useState(false)
+  const [paramModalType, setParamModalType] = useState(null)  // 'query_quote' or 'new_quote'
+  const [paramForm, setParamForm] = useState({
+    material: '',
+    surface: '',
+    heatTreat: '',
+    roughness: '',
+    position: '',
+    size: '',
+    company: ''
+  })
 
   const messagesEndRef = useRef(null)
   const fileInputRef   = useRef(null)
@@ -578,6 +717,22 @@ export default function App() {
   const handleFileChange = async (e) => {
     const files = Array.from(e.target.files)
     e.target.value = ''
+    
+    // Check if any file is step/stp/prt
+    const caeFiles = files.filter(file => {
+      const ext = file.name.split('.').pop().toLowerCase()
+      return ['step', 'stp', 'prt'].includes(ext)
+    })
+    
+    // If CAE files detected, open parameter modal
+    if (caeFiles.length > 0) {
+      setParamModalType('new_quote')
+      setParamForm({
+        material: '', surface: '', heatTreat: '', roughness: '', position: '', size: '', company: ''
+      })
+      setParamModalOpen(true)
+    }
+    
     for (const file of files) {
       const tmpId = `tmp_${Date.now()}_${file.name}`
       setAttachedFiles(prev => [...prev, { id: tmpId, file, uploading: true }])
@@ -592,6 +747,36 @@ export default function App() {
         ))
       }
     }
+  }
+
+  const handleSkillClick = (skill) => {
+    if (skill.label === '查詢報價') {
+      // Auto-fill today's date in YYYY/MM/DD format
+      const today = new Date()
+      const dateStr = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}`
+      setInput(`請執行 ${skill.label} - 日期: ${dateStr}`)
+      textareaRef.current?.focus()
+    } else if (skill.label === '新增報價') {
+      // Open parameter modal
+      setParamModalType('new_quote')
+      setParamForm({
+        material: '', surface: '', heatTreat: '', roughness: '', position: '', size: '', company: ''
+      })
+      setParamModalOpen(true)
+    } else {
+      // Default behavior
+      setInput(`請執行 ${skill.label}`)
+      textareaRef.current?.focus()
+    }
+  }
+
+  const handleParamSubmit = (data) => {
+    if (paramModalType === 'new_quote') {
+      const msg = `請執行 新增報價 - 加工材料: ${data.material}, 表面處理: ${data.surface}, 熱處理: ${data.heatTreat}, 表面粗糙度: ${data.roughness}, 型位公差: ${data.position}, 尺寸公差: ${data.size}, 公司名稱: ${data.company}`
+      setInput(msg)
+    }
+    setParamModalOpen(false)
+    setTimeout(() => textareaRef.current?.focus(), 100)
   }
 
   const handleKeyDown = e => {
@@ -701,6 +886,18 @@ export default function App() {
 
         {/* CHAT */}
         <div className="chat-area">
+          {skills.length > 0 && (
+            <div className="skills-toolbar">
+              {skills.map(s => (
+                <div key={s.id} className="skill-item"
+                  onClick={() => handleSkillClick(s)}
+                  title={s.label}>
+                  <div className="skill-icon" style={{color: s.color}}>{s.icon}</div>
+                  <div className="skill-label">{s.label}</div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="chat-messages">
             {historyLoading ? (
               <div className="history-loading">
@@ -711,7 +908,7 @@ export default function App() {
               <div className="welcome">
                 <div className="welcome-icon">🏭</div>
                 <div className="welcome-title">NexusAI 待命中</div>
-                <div className="welcome-sub">// 輸入問題或點選右側 Skill 開始使用</div>
+                <div className="welcome-sub">// 輸入問題或點選上方 Skill 開始使用</div>
               </div>
             ) : (
               <>
@@ -781,23 +978,18 @@ export default function App() {
                 ))
             }
           </div>
-          <div className="panel-section" style={{flex:1,overflowY:'auto'}}>
-            <div className="panel-title">可用 Skills</div>
-            {skills.length === 0
-              ? <div className="panel-placeholder">載入中...</div>
-              : skills.map(s => (
-                  <div key={s.id} className="skill-item"
-                    onClick={() => { setInput(`請執行 ${s.label}`); textareaRef.current?.focus() }}>
-                    <div className="skill-icon" style={{borderColor: s.color + '40'}}>{s.icon}</div>
-                    <div className="skill-label">{s.label}</div>
-                    <div className="skill-arrow">›</div>
-                  </div>
-                ))
-            }
-          </div>
+
         </div>
 
       </div>
+
+      <ParameterModal 
+        type={paramModalType}
+        open={paramModalOpen}
+        onClose={() => setParamModalOpen(false)}
+        onSubmit={handleParamSubmit}
+        initialData={paramForm}
+      />
     </>
   )
 }
