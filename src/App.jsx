@@ -607,7 +607,7 @@ export default function App() {
           <div className="login-bg"/>
           <div className="login-card">
             <div className="login-logo">
-              <div className="logo-mark">HZD</div>
+              <div className="logo-mark">Sachi</div>
               <div className="logo-text">Nexus<span>AI</span></div>
             </div>
             <div className="login-title">系統登入</div>
@@ -652,10 +652,10 @@ export default function App() {
         <div className="topbar">
           <button className="hamburger" onClick={() => setSidebarOpen(o => !o)}>☰</button>
           <div className="topbar-logo">
-            <div className="logo-mark">HZD</div>
+            <div className="logo-mark">Sachi</div>
             <div className="logo-text">Nexus<span>AI</span></div>
           </div>
-          <div className="topbar-title">工廠智能助理</div>
+          <div className="topbar-title">工廠智能助手</div>
           <div className="topbar-spacer"/>
           <div className="topbar-status">
             <div className={`status-dot ${devices.length === 0 ? 'offline' : ''}`}/>
