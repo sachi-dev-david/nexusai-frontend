@@ -8,7 +8,9 @@ import {
 } from './api/conversations.js'
 import { streamChat } from './api/chat.js'
 import { getDevices } from './api/devices.js'
-import { getSkills, uploadFile } from './api/skills.js'
+import { getOllamaModel, getVisionModel, getMathModel } from './api/models.js'
+import { getSkills } from './api/skills.js'
+import { getQuoteOptions, submitQuoteStream } from './api/quotes.js'
 
 // ── STYLES ────────────────────────────────────────────────────────────────
 const styles = `
@@ -131,6 +133,10 @@ const styles = `
   @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
   .file-badge{display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border2);padding:4px 10px;font-family:'JetBrains Mono',monospace;font-size:.65rem;color:var(--muted);margin-bottom:6px}
   .msg-error{color:var(--red);font-family:'JetBrains Mono',monospace;font-size:.72rem;padding:8px 12px;background:rgba(230,57,70,.08);border:1px solid rgba(230,57,70,.2);border-left:2px solid var(--red)}
+  .quote-block{display:flex;flex-direction:column;gap:10px}
+  .quote-section{background:var(--bg3);border:1px solid var(--border2);padding:10px 12px}
+  .quote-section-title{font-family:'JetBrains Mono',monospace;font-size:.62rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+  .quote-progress-text{white-space:pre-wrap;font-family:'JetBrains Mono',monospace;font-size:.72rem;line-height:1.6;color:var(--text)}
 
   /* History loading */
   .history-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:40px;font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--dim)}
@@ -163,29 +169,15 @@ const styles = `
   .hint-key{background:var(--bg3);border:1px solid var(--border);padding:1px 5px;border-radius:2px;color:var(--muted)}
   .upload-input{display:none}
 
-  /* RIGHT PANEL */
-  .right-panel{background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-  .panel-section{padding:12px;border-bottom:1px solid var(--border)}
-  .panel-title{font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:6px}
-  .panel-title::before{content:'';width:3px;height:3px;background:var(--nv)}
-  .device-item{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid rgba(34,34,34,.5)}
-  .device-item:last-child{border-bottom:none}
-  .device-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-  .device-dot.running{background:var(--nv);box-shadow:0 0 4px var(--nv)}
-  .device-dot.idle{background:var(--dim)}
-  .device-dot.warning{background:var(--warn);box-shadow:0 0 4px var(--warn);animation:pulse 1.5s infinite}
-  .device-dot.offline{background:var(--red)}
-  .device-name{font-size:.72rem;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .device-id{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:var(--dim)}
-  .device-temp{font-family:'JetBrains Mono',monospace;font-size:.62rem;color:var(--muted)}
-  .device-temp.hot{color:var(--warn)}
-  .skill-item{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;cursor:pointer;border:1px solid var(--border2);background:var(--bg3);transition:all .15s;margin:0 4px 8px 0;border-radius:4px;white-space:nowrap}
-  .skill-item:hover{background:var(--bg2);border-color:var(--nv);color:var(--nv)}
-  .skill-icon{width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0}
-  .skill-label{font-size:.75rem;font-weight:500}
-  .skill-arrow{display:none}
-  .skills-toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--border);max-height:120px;overflow-y:auto}
-  .panel-placeholder{font-family:'JetBrains Mono',monospace;font-size:.62rem;color:var(--dim);padding:8px 4px}
+  /* RIGHT PANEL - Hidden by request */
+  .right-panel{display:none}
+  .panel-section{display:none}
+  .device-item{display:none}
+
+  /* Hide right-panel column and expand chat area */
+  .app.hide-right-panel {
+    grid-template-columns: var(--sw) 1fr;
+  }
 
   /* RWD Tablet */
   @media(max-width:900px){
@@ -213,7 +205,7 @@ const styles = `
     .input-area{padding:8px 12px 12px;flex-shrink:0}
     .msg{max-width:100%}
     .input-hint{display:none}
-    .skills-toolbar{padding:8px 12px;max-height:100px}
+    .skills-toolbar{display:none}
     .skill-item{padding:4px 8px;font-size:.65rem}
   }
 
@@ -280,7 +272,7 @@ function SkillCallBadge({ call }) {
 }
 
 // ── PARAMETER MODAL ──────────────────────────────────────────────────────
-function ParameterModal({ type, open, onClose, onSubmit, initialData }) {
+function ParameterModal({ type, open, onClose, onSubmit, initialData, options = {}, optionsLoading = false, hasCadFile = false }) {
   const [data, setData] = React.useState(initialData || {
     material: '', surface: '', heatTreat: '', roughness: '', position: '', size: '', company: ''
   })
@@ -301,12 +293,21 @@ function ParameterModal({ type, open, onClose, onSubmit, initialData }) {
 
   if (!open) return null
 
-  const materialOptions = ['316不鏽鋼', 'A6063鋁合金', '牌號45鋼', '黃銅']
-  const surfaceOptions = ['磨砂', '亮面', '氧化', '鍍鎳']
-  const heatTreatOptions = ['無', '正火', '調質', '滲碳淬火']
-  const roughnessOptions = ['Ra0.8', 'Ra1.6', 'Ra3.2', 'Ra6.3']
-  const positionOptions = ['±0.1', '±0.05', '±0.02']
-  const sizeOptions = ['±0.2mm', '±0.1mm', '±0.05mm']
+  const canSubmit = type !== 'new_quote' || (
+    hasCadFile &&
+    !!data.material &&
+    !!data.surface &&
+    !!data.heatTreat &&
+    !!data.roughness &&
+    !!data.position &&
+    !!data.size &&
+    !!data.company.trim()
+  )
+
+  const renderOptions = (list = []) =>
+    list
+      .filter(opt => opt.enabled !== false)
+      .map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)
 
   return (
     <div className="param-modal-overlay" onClick={onClose}>
@@ -317,51 +318,53 @@ function ParameterModal({ type, open, onClose, onSubmit, initialData }) {
 
         {type === 'new_quote' && (
           <>
+            {optionsLoading && <div className="panel-placeholder">載入報價參數中...</div>}
+            {!hasCadFile && <div className="panel-placeholder">請先上傳 STEP/STP/PRT 檔案</div>}
             <div className="param-field">
               <label className="param-label">加工材料 *</label>
-              <select className="param-select" value={data.material} onChange={e => handleChange('material', e.target.value)}>
+              <select className="param-select" value={data.material} disabled={optionsLoading} onChange={e => handleChange('material', e.target.value)}>
                 <option value="">請選擇材料</option>
-                {materialOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                {renderOptions(options.materials)}
               </select>
             </div>
 
             <div className="param-field">
               <label className="param-label">表面處理 *</label>
-              <select className="param-select" value={data.surface} onChange={e => handleChange('surface', e.target.value)}>
+              <select className="param-select" value={data.surface} disabled={optionsLoading} onChange={e => handleChange('surface', e.target.value)}>
                 <option value="">請選擇表面處理</option>
-                {surfaceOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                {renderOptions(options.surfaces)}
               </select>
             </div>
 
             <div className="param-field">
               <label className="param-label">熱處理 *</label>
-              <select className="param-select" value={data.heatTreat} onChange={e => handleChange('heatTreat', e.target.value)}>
+              <select className="param-select" value={data.heatTreat} disabled={optionsLoading} onChange={e => handleChange('heatTreat', e.target.value)}>
                 <option value="">請選擇熱處理</option>
-                {heatTreatOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                {renderOptions(options.heatTreats)}
               </select>
             </div>
 
             <div className="param-field">
               <label className="param-label">表面粗糙度 *</label>
-              <select className="param-select" value={data.roughness} onChange={e => handleChange('roughness', e.target.value)}>
+              <select className="param-select" value={data.roughness} disabled={optionsLoading} onChange={e => handleChange('roughness', e.target.value)}>
                 <option value="">請選擇粗糙度</option>
-                {roughnessOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                {renderOptions(options.roughnesses)}
               </select>
             </div>
 
             <div className="param-field">
               <label className="param-label">型位公差 *</label>
-              <select className="param-select" value={data.position} onChange={e => handleChange('position', e.target.value)}>
+              <select className="param-select" value={data.position} disabled={optionsLoading} onChange={e => handleChange('position', e.target.value)}>
                 <option value="">請選擇型位公差</option>
-                {positionOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                {renderOptions(options.positionTolerances)}
               </select>
             </div>
 
             <div className="param-field">
               <label className="param-label">尺寸公差 *</label>
-              <select className="param-select" value={data.size} onChange={e => handleChange('size', e.target.value)}>
+              <select className="param-select" value={data.size} disabled={optionsLoading} onChange={e => handleChange('size', e.target.value)}>
                 <option value="">請選擇尺寸公差</option>
-                {sizeOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                {renderOptions(options.sizeTolerances)}
               </select>
             </div>
           </>
@@ -375,7 +378,7 @@ function ParameterModal({ type, open, onClose, onSubmit, initialData }) {
 
         <div className="param-actions">
           <button className="param-btn param-btn-cancel" onClick={onClose}>取消</button>
-          <button className="param-btn param-btn-submit" onClick={handleSubmit}>確認</button>
+          <button className="param-btn param-btn-submit" disabled={optionsLoading || !canSubmit} onClick={handleSubmit}>確認</button>
         </div>
       </div>
     </div>
@@ -388,6 +391,34 @@ function Message({ msg, userAvatar, userName }) {
   const time = msg.ts
     ? new Date(msg.ts).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
     : ''
+
+  const quoteMarker = '【報價報告】'
+  const isQuoteFlowMsg = !isUser && typeof msg.text === 'string' && msg.text.includes('新增報價流程啟動中')
+  let progressText = msg.text ?? ''
+  let reportText = ''
+
+  if (isQuoteFlowMsg && progressText.includes(quoteMarker)) {
+    const idx = progressText.indexOf(quoteMarker)
+    progressText = progressText.slice(0, idx).trimEnd()
+    reportText = msg.text.slice(idx + quoteMarker.length).trim()
+  }
+
+  let completionLine = ''
+  if (isQuoteFlowMsg) {
+    const doneToken = '✓ 新增報價完成'
+    if (progressText.includes(doneToken)) {
+      progressText = progressText.replace(doneToken, '').trimEnd()
+      completionLine = doneToken
+    }
+    if (reportText.includes(doneToken)) {
+      reportText = reportText.replace(doneToken, '').trimEnd()
+      completionLine = doneToken
+    }
+    if (completionLine) {
+      progressText = `${progressText}\n\n${completionLine}`.trim()
+    }
+  }
+
   return (
     <div className={`msg ${isUser ? 'user' : 'ai'}`}>
       <div className="msg-avatar">{isUser ? (userAvatar ?? '我') : 'AI'}</div>
@@ -399,10 +430,23 @@ function Message({ msg, userAvatar, userName }) {
         <div className="msg-bubble md">
           {msg.file && <div className="file-badge">📎 {msg.file}</div>}
           {msg.skillCalls?.map((c,i) => <SkillCallBadge key={i} call={c}/>)}
-          {msg.error
-            ? <div className="msg-error">⚠ {msg.error}</div>
-            : renderMarkdown(msg.text)
-          }
+          {isQuoteFlowMsg ? (
+            <div className="quote-block">
+              <div className="quote-section">
+                <div className="quote-section-title">執行進度</div>
+                <div className="quote-progress-text">{progressText}</div>
+              </div>
+              {reportText && (
+                <div className="quote-section">
+                  <div className="quote-section-title">最終報價報告</div>
+                  {renderMarkdown(reportText)}
+                </div>
+              )}
+            </div>
+          ) : (
+            renderMarkdown(msg.text)
+          )}
+          {msg.error && <div className="msg-error">⚠ {msg.error}</div>}
           {msg.streaming && <span className="cursor"/>}
         </div>
       </div>
@@ -430,12 +474,17 @@ export default function App() {
   // ── Chat state ──
   const [input, setInput]               = useState('')
   const [streaming, setStreaming]       = useState(false)
-  const [attachedFiles, setAttachedFiles] = useState([])  // { file, fileId, uploading }
+  const [attachedFiles, setAttachedFiles] = useState([])  // { file, uploading, error }
 
   // ── Side panel state ──
   const [devices, setDevices]           = useState([])
   const [skills, setSkills]             = useState([])
   const [sidebarOpen, setSidebarOpen]   = useState(false)
+
+  // ── Model status state ──
+  const [ollamaModel, setOllamaModel]    = useState({ name: 'Llama 3.2', status: 'offline' })
+  const [visionModel, setVisionModel]   = useState({ name: 'Vision', status: 'offline' })
+  const [mathModel, setMathModel]       = useState({ name: 'Math', status: 'offline' })
 
   // ── Parameter modal state ──
   const [paramModalOpen, setParamModalOpen] = useState(false)
@@ -448,6 +497,15 @@ export default function App() {
     position: '',
     size: '',
     company: ''
+  })
+  const [quoteOptionsLoading, setQuoteOptionsLoading] = useState(false)
+  const [quoteOptions, setQuoteOptions] = useState({
+    materials: [],
+    surfaces: [],
+    heatTreats: [],
+    roughnesses: [],
+    positionTolerances: [],
+    sizeTolerances: [],
   })
 
   const messagesEndRef = useRef(null)
@@ -465,12 +523,13 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // ── Load devices + skills after login ──
+  // ── Load devices + skills + models after login ──
   useEffect(() => {
     if (!isLoggedIn) return
     loadDevices()
     loadSkills()
     loadConversations()
+    loadModelStatuses()
   }, [isLoggedIn])
 
   // ── Poll devices every 15s ──
@@ -479,6 +538,26 @@ export default function App() {
     const id = setInterval(loadDevices, 15000)
     return () => clearInterval(id)
   }, [isLoggedIn])
+
+  // ── Poll model statuses every 30s ──
+  useEffect(() => {
+    if (!isLoggedIn) return
+    const id = setInterval(loadModelStatuses, 30000)
+    return () => clearInterval(id)
+  }, [isLoggedIn])
+
+  async function loadModelStatuses() {
+    try {
+      const [ollama, vision, math] = await Promise.all([
+        getOllamaModel().catch(() => ({ name: 'Llama 3.2', status: 'offline' })),
+        getVisionModel().catch(() => ({ name: 'Vision', status: 'offline' })),
+        getMathModel().catch(() => ({ name: 'Math', status: 'offline' }))
+      ])
+      setOllamaModel(ollama)
+      setVisionModel(vision)
+      setMathModel(math)
+    } catch { /* silent */ }
+  }
 
   async function loadDevices() {
     try {
@@ -501,6 +580,32 @@ export default function App() {
       setConvList(data)
     } catch { /* silent */ }
     finally { setConvListLoading(false) }
+  }
+
+  async function loadQuoteOptionsData() {
+    setQuoteOptionsLoading(true)
+    try {
+      const data = await getQuoteOptions()
+      setQuoteOptions({
+        materials: data.materials ?? [],
+        surfaces: data.surfaces ?? [],
+        heatTreats: data.heatTreats ?? [],
+        roughnesses: data.roughnesses ?? [],
+        positionTolerances: data.positionTolerances ?? [],
+        sizeTolerances: data.sizeTolerances ?? [],
+      })
+    } catch {
+      setQuoteOptions({
+        materials: [],
+        surfaces: [],
+        heatTreats: [],
+        roughnesses: [],
+        positionTolerances: [],
+        sizeTolerances: [],
+      })
+    } finally {
+      setQuoteOptionsLoading(false)
+    }
   }
 
   // ── LOGIN ──
@@ -612,11 +717,7 @@ export default function App() {
       } catch { return }
     }
 
-    // Find uploaded fileId if any
-    const uploadedFile = attachedFiles.find(f => f.fileId)
-    const fileId = uploadedFile?.fileId ?? null
-    const fileName = uploadedFile?.file?.name ?? null
-    setAttachedFiles([])
+    const fileName = null
 
     // Add user message locally
     const userMsgId = `u_${Date.now()}`
@@ -642,7 +743,7 @@ export default function App() {
     abortRef.current = abort
 
     try {
-      await streamChat(currentConvId, text, fileId, {
+      await streamChat(currentConvId, text, null, {
         onSkillStart: (name, args) => {
           setMessagesMap(prev => ({
             ...prev,
@@ -713,40 +814,29 @@ export default function App() {
     }
   }, [input, streaming, attachedFiles, convId])
 
-  // ── FILE UPLOAD ──
+  const openNewQuoteModal = async () => {
+    setParamModalType('new_quote')
+    setParamForm({
+      material: '', surface: '', heatTreat: '', roughness: '', position: '', size: '', company: ''
+    })
+    setParamModalOpen(true)
+    await loadQuoteOptionsData()
+  }
+
+  // ── FILE UPLOAD (for quote flow) ──
   const handleFileChange = async (e) => {
     const files = Array.from(e.target.files)
     e.target.value = ''
-    
-    // Check if any file is step/stp/prt
-    const caeFiles = files.filter(file => {
-      const ext = file.name.split('.').pop().toLowerCase()
+
+    const cadFile = files.find(file => {
+      const ext = file.name.split('.').pop()?.toLowerCase()
       return ['step', 'stp', 'prt'].includes(ext)
     })
-    
-    // If CAE files detected, open parameter modal
-    if (caeFiles.length > 0) {
-      setParamModalType('new_quote')
-      setParamForm({
-        material: '', surface: '', heatTreat: '', roughness: '', position: '', size: '', company: ''
-      })
-      setParamModalOpen(true)
-    }
-    
-    for (const file of files) {
-      const tmpId = `tmp_${Date.now()}_${file.name}`
-      setAttachedFiles(prev => [...prev, { id: tmpId, file, uploading: true }])
-      try {
-        const res = await uploadFile(file)
-        setAttachedFiles(prev => prev.map(f =>
-          f.id === tmpId ? { ...f, fileId: res.fileId, uploading: false } : f
-        ))
-      } catch {
-        setAttachedFiles(prev => prev.map(f =>
-          f.id === tmpId ? { ...f, uploading: false, error: true } : f
-        ))
-      }
-    }
+
+    if (!cadFile) return
+
+    setAttachedFiles([{ id: `tmp_${Date.now()}_${cadFile.name}`, file: cadFile, uploading: false }])
+    await openNewQuoteModal()
   }
 
   const handleSkillClick = (skill) => {
@@ -757,12 +847,7 @@ export default function App() {
       setInput(`請執行 ${skill.label} - 日期: ${dateStr}`)
       textareaRef.current?.focus()
     } else if (skill.label === '新增報價') {
-      // Open parameter modal
-      setParamModalType('new_quote')
-      setParamForm({
-        material: '', surface: '', heatTreat: '', roughness: '', position: '', size: '', company: ''
-      })
-      setParamModalOpen(true)
+      openNewQuoteModal()
     } else {
       // Default behavior
       setInput(`請執行 ${skill.label}`)
@@ -770,12 +855,224 @@ export default function App() {
     }
   }
 
-  const handleParamSubmit = (data) => {
-    if (paramModalType === 'new_quote') {
-      const msg = `請執行 新增報價 - 加工材料: ${data.material}, 表面處理: ${data.surface}, 熱處理: ${data.heatTreat}, 表面粗糙度: ${data.roughness}, 型位公差: ${data.position}, 尺寸公差: ${data.size}, 公司名稱: ${data.company}`
-      setInput(msg)
+  const explainQuoteFailureWithLLM = async (currentConvId, rawError) => {
+    const aiMsgId = `a_${Date.now()}_quote_err`
+    setMessagesMap(prev => ({
+      ...prev,
+      [currentConvId]: [...(prev[currentConvId] ?? []), {
+        id: aiMsgId, role: 'ai', ts: Date.now(), text: '', skillCalls: [], skillsDone: true, streaming: true,
+      }]
+    }))
+
+    setStreaming(true)
+    const abort = new AbortController()
+    abortRef.current = abort
+
+    const prompt = `你是工廠報價助手。請將以下新增報價失敗內容，整理成給使用者看的繁體中文說明，包含：1) 失敗原因 2) 下一步處理建議。\n\n錯誤內容：${rawError}`
+
+    try {
+      await streamChat(currentConvId, prompt, null, {
+        onToken: (token) => {
+          setMessagesMap(prev => ({
+            ...prev,
+            [currentConvId]: (prev[currentConvId] ?? []).map(m =>
+              m.id === aiMsgId ? { ...m, text: (m.text ?? '') + token } : m
+            )
+          }))
+        },
+        onDone: () => {
+          setMessagesMap(prev => ({
+            ...prev,
+            [currentConvId]: (prev[currentConvId] ?? []).map(m =>
+              m.id === aiMsgId ? { ...m, streaming: false } : m
+            )
+          }))
+          setStreaming(false)
+          loadConversations()
+        },
+        onError: () => {
+          setMessagesMap(prev => ({
+            ...prev,
+            [currentConvId]: (prev[currentConvId] ?? []).map(m =>
+              m.id === aiMsgId ? { ...m, streaming: false, error: rawError } : m
+            )
+          }))
+          setStreaming(false)
+        },
+      }, abort.signal)
+    } catch {
+      setMessagesMap(prev => ({
+        ...prev,
+        [currentConvId]: (prev[currentConvId] ?? []).map(m =>
+          m.id === aiMsgId ? { ...m, streaming: false, error: rawError } : m
+        )
+      }))
+      setStreaming(false)
     }
+  }
+
+  const handleParamSubmit = async (data) => {
+    if (paramModalType !== 'new_quote') return
+
+    const cadFile = attachedFiles.find(f => {
+      const ext = f.file?.name?.split('.').pop()?.toLowerCase()
+      return ['step', 'stp', 'prt'].includes(ext)
+    })
+    if (!cadFile?.file) return
+
+    let currentConvId = convId
+    if (!currentConvId) {
+      try {
+        const conv = await createConversation()
+        currentConvId = conv.id
+        setConvId(conv.id)
+        setConvList(prev => [conv, ...prev])
+        setMessagesMap(prev => ({ ...prev, [conv.id]: [] }))
+      } catch {
+        return
+      }
+    }
+
     setParamModalOpen(false)
+
+    const findLabel = (list, id) => list.find(x => x.id === id)?.label ?? id
+    const userText = `新增報價\n- 材料: ${findLabel(quoteOptions.materials, data.material)}\n- 表面處理: ${findLabel(quoteOptions.surfaces, data.surface)}\n- 熱處理: ${findLabel(quoteOptions.heatTreats, data.heatTreat)}\n- 粗糙度: ${findLabel(quoteOptions.roughnesses, data.roughness)}\n- 型位公差: ${findLabel(quoteOptions.positionTolerances, data.position)}\n- 尺寸公差: ${findLabel(quoteOptions.sizeTolerances, data.size)}\n- 公司: ${data.company}`
+
+    const userMsgId = `u_${Date.now()}_quote`
+    setMessagesMap(prev => ({
+      ...prev,
+      [currentConvId]: [...(prev[currentConvId] ?? []), {
+        id: userMsgId,
+        role: 'user',
+        ts: Date.now(),
+        text: userText,
+        file: cadFile.file.name,
+      }]
+    }))
+
+    const aiMsgId = `a_${Date.now()}_quote`
+    setMessagesMap(prev => ({
+      ...prev,
+      [currentConvId]: [...(prev[currentConvId] ?? []), {
+        id: aiMsgId,
+        role: 'ai',
+        ts: Date.now(),
+        text: '新增報價流程啟動中...\n',
+        skillCalls: [],
+        skillsDone: false,
+        quoteReportStarted: false,
+        streaming: true,
+      }]
+    }))
+
+    const stepNames = {
+      save_file: 'save_file',
+      extract: 'extract',
+      predict: 'predict',
+      calc: 'calc',
+      save: 'save',
+    }
+
+    const formData = new FormData()
+    formData.append('material_id', data.material)
+    formData.append('surface_id', data.surface)
+    formData.append('heat_treat_id', data.heatTreat)
+    formData.append('roughness_id', data.roughness)
+    formData.append('position_tolerance_id', data.position)
+    formData.append('size_tolerance_id', data.size)
+    formData.append('company_name', data.company)
+    if (currentConvId) formData.append('conversation_id', currentConvId)
+    formData.append('cad_file', cadFile.file)
+
+    setStreaming(true)
+    const abort = new AbortController()
+    abortRef.current = abort
+
+    try {
+      await submitQuoteStream(formData, {
+        onEvent: (evt) => {
+          if (evt.type === 'step_start') {
+            setMessagesMap(prev => ({
+              ...prev,
+              [currentConvId]: (prev[currentConvId] ?? []).map(m => {
+                if (m.id !== aiMsgId) return m
+                const exists = (m.skillCalls ?? []).some(sc => sc.name === stepNames[evt.step])
+                return {
+                  ...m,
+                  skillCalls: exists
+                    ? (m.skillCalls ?? [])
+                    : [...(m.skillCalls ?? []), { name: stepNames[evt.step] ?? evt.step, args: {}, done: false }],
+                  text: `${m.text ?? ''}- 開始: ${evt.stepMessage ?? evt.step}\n`,
+                }
+              })
+            }))
+          }
+
+          if (evt.type === 'step_done') {
+            setMessagesMap(prev => ({
+              ...prev,
+              [currentConvId]: (prev[currentConvId] ?? []).map(m => {
+                if (m.id !== aiMsgId) return m
+                return {
+                  ...m,
+                  skillCalls: (m.skillCalls ?? []).map(sc =>
+                    sc.name === (stepNames[evt.step] ?? evt.step) ? { ...sc, done: true, result: evt.stepData } : sc
+                  ),
+                  text: `${m.text ?? ''}- 完成: ${evt.stepMessage ?? evt.step}\n`,
+                }
+              })
+            }))
+          }
+
+          if (evt.type === 'token' && evt.token) {
+            setMessagesMap(prev => ({
+              ...prev,
+              [currentConvId]: (prev[currentConvId] ?? []).map(m => {
+                if (m.id !== aiMsgId) return m
+                const prefix = m.quoteReportStarted ? '' : '\n【報價報告】\n'
+                return {
+                  ...m,
+                  quoteReportStarted: true,
+                  text: `${m.text ?? ''}${prefix}${evt.token}`,
+                }
+              })
+            }))
+          }
+        },
+      }, abort.signal)
+
+      setMessagesMap(prev => ({
+        ...prev,
+        [currentConvId]: (prev[currentConvId] ?? []).map(m =>
+          m.id === aiMsgId
+            ? { ...m, streaming: false, skillsDone: true, text: `${m.text ?? ''}\n✓ 新增報價完成` }
+            : m
+        )
+      }))
+      setStreaming(false)
+      setAttachedFiles([])
+      setParamForm({ material: '', surface: '', heatTreat: '', roughness: '', position: '', size: '', company: '' })
+      loadConversations()
+      setTimeout(() => textareaRef.current?.focus(), 100)
+    } catch (e) {
+      const detailsText = e?.details ? `\n${JSON.stringify(e.details)}` : ''
+      const rawError = `${e?.message ?? '新增報價失敗'}${detailsText}`
+
+      setMessagesMap(prev => ({
+        ...prev,
+        [currentConvId]: (prev[currentConvId] ?? []).map(m =>
+          m.id === aiMsgId ? { ...m, streaming: false, error: rawError, skillsDone: true } : m
+        )
+      }))
+      setStreaming(false)
+      await explainQuoteFailureWithLLM(currentConvId, rawError)
+      setTimeout(() => textareaRef.current?.focus(), 100)
+    }
+  }
+
+  const handleParamCancel = () => {
+    setParamModalOpen(false)
+    setAttachedFiles([])
     setTimeout(() => textareaRef.current?.focus(), 100)
   }
 
@@ -831,7 +1128,7 @@ export default function App() {
     <>
       <style>{styles}</style>
       <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)}/>
-      <div className="app">
+      <div className="app hide-right-panel">
 
         {/* TOPBAR */}
         <div className="topbar">
@@ -843,8 +1140,16 @@ export default function App() {
           <div className="topbar-title">工廠智能助手</div>
           <div className="topbar-spacer"/>
           <div className="topbar-status">
-            <div className={`status-dot ${devices.length === 0 ? 'offline' : ''}`}/>
-            <span>OLLAMA · Llama 3.2 · 本地部署</span>
+            <div className={`status-dot ${ollamaModel.status === 'online' ? '' : 'offline'}`}/>
+            <span>OLLAMA · {ollamaModel.name} · 本地部署</span>
+          </div>
+          <div className="topbar-status">
+            <div className={`status-dot ${visionModel.status === 'online' ? '' : 'offline'}`}/>
+            <span>特徵辨識 · {visionModel.name} · 本地部署</span>
+          </div>
+          <div className="topbar-status">
+            <div className={`status-dot ${mathModel.status === 'online' ? '' : 'offline'}`}/>
+            <span>數學模型 · {mathModel.name} · 本地部署</span>
           </div>
           <div className="topbar-user">
             <div className="user-info">
@@ -887,7 +1192,7 @@ export default function App() {
         {/* CHAT */}
         <div className="chat-area">
           {skills.length > 0 && (
-            <div className="skills-toolbar">
+            <div hidden className="skills-toolbar">
               {skills.map(s => (
                 <div key={s.id} className="skill-item"
                   onClick={() => handleSkillClick(s)}
@@ -943,9 +1248,9 @@ export default function App() {
                 onKeyDown={handleKeyDown} rows={1}/>
               <div className="input-actions">
                 <input ref={fileInputRef} type="file" className="upload-input"
-                  onChange={handleFileChange} multiple/>
-                <button className="icon-btn" title="上傳檔案"
-                  onClick={() => fileInputRef.current?.click()}>📎</button>
+                  onChange={handleFileChange} accept=".step,.stp,.prt"/>
+                <button className="icon-btn" title="上傳"
+                  onClick={() => fileInputRef.current?.click()}>⤴</button>
                 <button className="send-btn" onClick={handleSend}
                   disabled={!input.trim() || streaming}>▶</button>
               </div>
@@ -959,7 +1264,7 @@ export default function App() {
         </div>
 
         {/* RIGHT PANEL */}
-        <div className="right-panel">
+        <div hidden className="right-panel">
           <div className="panel-section">
             <div className="panel-title">設備狀態</div>
             {devices.length === 0
@@ -986,9 +1291,15 @@ export default function App() {
       <ParameterModal 
         type={paramModalType}
         open={paramModalOpen}
-        onClose={() => setParamModalOpen(false)}
+        onClose={handleParamCancel}
         onSubmit={handleParamSubmit}
         initialData={paramForm}
+        options={quoteOptions}
+        optionsLoading={quoteOptionsLoading}
+        hasCadFile={attachedFiles.some(f => {
+          const ext = f.file?.name?.split('.').pop()?.toLowerCase()
+          return ['step', 'stp', 'prt'].includes(ext)
+        })}
       />
     </>
   )
