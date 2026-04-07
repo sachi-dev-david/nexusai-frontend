@@ -1089,7 +1089,7 @@ export default function App() {
           <div className="login-bg"/>
           <div className="login-card">
             <div className="login-logo">
-              <div className="logo-mark">Sachi</div>
+              <div className="logo-mark">Hzd</div>
               <div className="logo-text">Nexus<span>AI</span></div>
             </div>
             <div className="login-title">系統登入</div>
@@ -1134,7 +1134,7 @@ export default function App() {
         <div className="topbar">
           <button className="hamburger" onClick={() => setSidebarOpen(o => !o)}>☰</button>
           <div className="topbar-logo">
-            <div className="logo-mark">Sachi</div>
+            <div className="logo-mark">Hzd</div>
             <div className="logo-text">Nexus<span>AI</span></div>
           </div>
           <div className="topbar-title">工廠智能助手</div>

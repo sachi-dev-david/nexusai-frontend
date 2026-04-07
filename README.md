@@ -82,7 +82,7 @@ VITE_API_BASE_URL=http://192.168.1.100:5050
 AI 呼叫 Plugin 時，訊息泡泡上方會即時顯示執行狀態：
 
 ```
-▶ query_quote  {"customer_name":"SachiCIM","date_from":"2026-01-01"}  ✓ 完成
+▶ query_quote  {"customer_name":"HzdCIM","date_from":"2026-01-01"}  ✓ 完成
 ```
 
 - **`skill_start`** 事件 → 顯示 Plugin 名稱 + 參數（pending 動畫）
